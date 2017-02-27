@@ -129,6 +129,13 @@ TYPE VENDORCODE_LIST IS RECORD
   ROWIDS                rowidArray
 );
 
+TYPE QP_VENDORS IS RECORD
+(
+ VENDOR_ID        DBMS_SQL.NUMBER_TABLE,
+ VENDOR_CODE      DBMS_SQL.VARCHAR2_TABLE,
+ SEGMENTS         DBMS_SQL.VARCHAR2_TABLE
+);
+
 TYPE VENDOR_SEGMENTS IS RECORD
 (
  VENDOR_CODE      DBMS_SQL.VARCHAR2_TABLE,
@@ -673,6 +680,7 @@ P_FILE_type NUMBER
 
 PROCEDURE ICC_CLEAR_BACKLOG;
 
+PROCEDURE NON_ACTIVE_TD_VENDORS;
 
 END;
 
@@ -7522,6 +7530,57 @@ BEGIN
 
 END;
 
+PROCEDURE NON_ACTIVE_TD_VENDORS
+IS
+
+GC             GenRefCursor;
+SQL_STMT       VARCHAR2(32000 BYTE);
+DEL_STMT       VARCHAR2(32000 BYTE);
+CNT            NUMBER;
+QP             QP_VENDORS;
+
+
+BEGIN
+
+CNT       := 0;
+
+DEL_STMT  := 'DELETE SQA_VENDOR_LIST WHERE VENDOR_ID = :A';
+
+SQL_STMT := ' SELECT  A.VENDOR_ID,  A.VENDOR_CODE, A.SEGMENTS ';
+SQL_STMT := SQL_STMT||' FROM SQA_VENDOR_LIST A ';
+SQL_STMT := SQL_STMT||' LEFT JOIN ( SELECT CONTRACTOR, REPORT_SEGMENT,  Latest_job';
+SQL_STMT := SQL_STMT||'             FROM ( SELECT Contractor, Report_Segment, max(COMPLETED_DT) latest_job from sqa_td_data  group by contractor, report_segment ) ';  
+SQL_STMT := SQL_STMT||'             WHERE LATEST_JOB < ( GV_CURRENT_DATE - 60 ) ';
+SQL_STMT := SQL_STMT||'           ) B ON ( A.VENDOR_CODE = B.CONTRACTOR AND A.SEGMENTS = B.REPORT_SEGMENT)';    
+SQL_STMT := SQL_STMT||'  WHERE  A.VENDOR_CODE = B.CONTRACTOR '; 
+SQL_STMT := SQL_STMT||'    AND  A.SEGMENTS    = B.REPORT_SEGMENT ';
+
+OPEN GC FOR SQL_STMT;
+     FETCH GC BULK COLLECT INTO QP.VENDOR_ID, QP.VENDOR_CODE, QP.SEGMENTS;
+     CNT := QP.VENDOR_ID.COUNT;
+      
+     FOR I in 1.. qp.vendor_id.count loop
+           
+          EXECUTE IMMEDIATE DEL_STMT USING QP.VENDOR_ID(I);
+          
+     end loop;
+       
+CLOSE GC;
+             commit;
+
+            INSERT INTO BOA_PROCESS_LOG
+                  (
+                    PROCESS,
+                    SUB_PROCESS,
+                    ENTRYDTE,
+                    ROWCOUNTS,
+                    MESSAGE
+                  )
+           VALUES ( 'SQA_LOVS', 'NON_ACTIVE_TD_VENDORS',SYSDATE, CNT, 'Remove non active vendors from working queue');
+           COMMIT;
+
+
+END;
 
 
 
