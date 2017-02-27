@@ -21,14 +21,14 @@ TYPE SQA_DATA_ARCH IS RECORD (
 
 
 TYPE SQA_TD_ASSIGN IS RECORD (
-  PID         DBMS_SQL.NUMBER_TABLE,
-  WORKING     DBMS_SQL.VARCHAR2_TABLE,
-  SQA_TD_REP  DBMS_SQL.VARCHAR2_TABLE,
-  REVIEW_ID   DBMS_SQL.NUMBER_TABLE,
-  BATCH_NO    DBMS_SQL.NUMBER_TABLE,
-  ROWIDS      rowidArray
+  PID          DBMS_SQL.NUMBER_TABLE,
+  WORKING      DBMS_SQL.VARCHAR2_TABLE,
+  SQA_TD_REP   DBMS_SQL.VARCHAR2_TABLE,
+  REVIEW_ID    DBMS_SQL.NUMBER_TABLE,
+  BATCH_NO     DBMS_SQL.NUMBER_TABLE,
+  COMPLETED_DT DBMS_SQL.DATE_TABLE,
+  RK           DBMS_SQL.NUMBER_TABLE
 );
-
 
 
 TYPE LOV_RECORD IS RECORD (
@@ -2175,6 +2175,7 @@ SQLROWS               NUMBER;
 RCODE                 NUMBER;
 PPID                  NUMBER;
 USER_ID               NUMBER;
+GROUP_NO              NUMBER;
 gc                    GenRefCursor;
 SQL_STMT              VARCHAR2(32000 BYTE);
 UPD_STMT              VARCHAR2(32000 BYTE);
@@ -2221,41 +2222,76 @@ INSERT INTO  SQA_VENDOR_HISTORY ( VENDOR_ID, REVIEWED_BY, NBR_REVIEWED,      REV
                        VALUES ( P_VENDOR_ID, P_APP_USER,  P_NUMBER_TO_REVIEW,GV_CURRENT_DATE, 0, 0, 0,0) RETURNING HISTORY_ID INTO P_REVIEW_ID;
 
                        COMMIT;
-/*
-   sqa_td_data
-   working
+                       
+--LIMIT P_NUMBER_TO_REVIEW;
 
-LOANNUMBER, SPIPROPERTYID, ADD_1
-*/
 
-SQL_STMT := 'SELECT PID, WORKING, SQA_TD_REP, REVIEW_ID, BATCH_NO, ROWID ';
-SQL_STMT := SQL_STMT||' FROM SQA_TD_DATA ';
-SQL_STMT := SQL_STMT||'  WHERE  WORKING IS NULL';
-SQL_STMT := SQL_STMT||'   AND   SQA_TD_REP IS NULL';
-SQL_STMT := SQL_STMT||'   AND   CONTRACTOR = :A';
-SQL_STMT := SQL_STMT||'   AND   REPORT_SEGMENT = :B';
-SQL_STMT := SQL_STMT||'   AND   COMPLETED_DT >= :C';
-SQL_STMT := SQL_STMT||'   ORDER BY LOANNUMBER, SPIPROPERTYID DESC, ADD_1';
+GROUP_NO := 0;
+SQLROWS  := 0;
 
-OPEN GC FOR SQL_STMT USING  P_VENDOR_NAME, P_SEGMENTS, P_START_COUNTER_DATE;
-    FETCH GC BULK COLLECT INTO TD.PID,
-                               TD.WORKING,
-                               TD.SQA_TD_REP,
-                               TD.REVIEW_ID,
-                               TD.BATCH_NO,
-                               TD.ROWIDS
-                               LIMIT P_NUMBER_TO_REVIEW;
+UPD_STMT := 'UPDATE SQA_TD_DATA  SET WORKING = :A,  SQA_TD_REP = :B,  REVIEW_ID = :C,  BATCH_NO = :D  WHERE PID = :E';
 
-CLOSE GC;
+SQL_STMT := 'SELECT PID, WORKING, SQA_TD_REP, REVIEW_ID,  0 AS BATCH_NO, COMPLETED_DT, RK ';
+SQL_STMT := SQL_STMT||'  FROM ( SELECT PID, WORKING, SQA_TD_REP, REVIEW_ID, COMPLETED_DT , RANK() OVER (PARTITION BY ADD_1, CITY,ST, ZIP ORDER BY COMPLETED_DT DESC, ROWNUM) RK ';
+SQL_STMT := SQL_STMT||'          FROM SQA_TD_DATA  ';
+SQL_STMT := SQL_STMT||'          WHERE  WORKING IS NULL';
+SQL_STMT := SQL_STMT||'           AND   SQA_TD_REP IS NULL';
+SQL_STMT := SQL_STMT||'           AND   CONTRACTOR = :A';
+SQL_STMT := SQL_STMT||'           AND   REPORT_SEGMENT = :B';
+SQL_STMT := SQL_STMT||'           AND   COMPLETED_DT >= :C ) ';
+SQL_STMT := SQL_STMT||'  WHERE   RK  = :R ';
 
-UPD_STMT := 'UPDATE SQA_TD_DATA SET WORKING = :A, SQA_TD_REP = :B, REVIEW_ID = :C, BATCH_NO = :D WHERE ROWID = :E';
 
-FORALL i IN 1..TD.PID.COUNT
-EXECUTE IMMEDIATE UPD_STMT USING  'Y', UPPER(P_APP_USER), P_REVIEW_ID, P_BATCH_NO, TD.ROWIDS(i);
+WHILE ( SQLROWS < P_NUMBER_TO_REVIEW ) 
+    LOOP
+         GROUP_NO := GROUP_NO + 1;
+    
+    OPEN GC FOR SQL_STMT USING  P_VENDOR_NAME, P_SEGMENTS, P_START_COUNTER_DATE, GROUP_NO;
+        FETCH GC BULK COLLECT INTO TD.PID,
+                                   TD.WORKING,
+                                   TD.SQA_TD_REP,
+                                   TD.REVIEW_ID,
+                                   TD.BATCH_NO,
+                                   TD.COMPLETED_DT,
+                                   TD.rk;
+                        
+    CLOSE GC;
+     
+           
+           IF  (TD.PID.COUNT = 0) 
+               THEN 
+                   SQLROWS := P_NUMBER_TO_REVIEW;
+           END IF;     
 
-SQLROWS := SQL%ROWCOUNT;
+            FOR i IN 1..TD.PID.COUNT loop               
+                EXIT WHEN SQLROWS >= P_NUMBER_TO_REVIEW;
 
-COMMIT;
+
+                 
+                IF (TD.COMPLETED_DT(i) > ( GV_CURRENT_DATE  - 60) ) 
+                    THEN 
+                       TD.WORKING(i)    := 'Y';
+                       TD.SQA_TD_REP(i) := UPPER(P_APP_USER);
+                       TD.REVIEW_ID(i)  := P_REVIEW_ID;
+                       TD.BATCH_NO(i)   := P_BATCH_NO;
+                       SQLROWS          := SQLROWS + 1;                                        
+                END IF;
+                
+            END LOOP;                               
+
+
+        FOR i IN 1..TD.PID.COUNT loop
+           
+           IF  ( TD.BATCH_NO(i)  > 0 ) THEN 
+                EXECUTE IMMEDIATE UPD_STMT USING  TD.WORKING(i), TD.SQA_TD_REP(i), TD.REVIEW_ID(i), TD.BATCH_NO(i), TD.PID(i);
+           END IF;
+           
+        END LOOP;                               
+
+        COMMIT;
+
+END LOOP;
+        
 
 
           INSERT INTO BOA_PROCESS_LOG
@@ -2330,9 +2366,6 @@ exception
                 )
     VALUES ( 'SQA_LOVS', 'SET_REP_WORK_QUEUE',SYSDATE, RCODE, MSG);
     COMMIT;
-
-
-
 
 END;
 
