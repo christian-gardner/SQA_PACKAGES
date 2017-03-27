@@ -7,7 +7,12 @@ IS
   TO DO
   :ADD A NEW PROCEDURE TO LOAD SPECIAL PROJECTS INTO ICC
   :ADD A NEW PROCEDURE TO INSERT SPECIAL PROJECTS TO ASSIGNMENT_TEMPLATE
-
+   
+  Version # 3.5
+  Update SQA td data Archive process
+  add    SQA td data etl archive process
+  update SQA td Selection process
+  
  ******************************************************/
 
 
