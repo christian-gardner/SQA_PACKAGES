@@ -8,6 +8,8 @@ IS
   :ADD A NEW PROCEDURE TO LOAD SPECIAL PROJECTS INTO ICC
   :ADD A NEW PROCEDURE TO INSERT SPECIAL PROJECTS TO ASSIGNMENT_TEMPLATE
 
+  Version # 3.6 
+  :ADD A NEW PROCEDURE TO PROCESS Reopened QAPP ICC reviews
  ******************************************************/
 
 
