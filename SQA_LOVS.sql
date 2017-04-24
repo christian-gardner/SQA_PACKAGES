@@ -1,3 +1,4 @@
+SET DEFINE OFF;
 CREATE OR REPLACE PACKAGE     SQA_LOVS
 IS
 
@@ -7,11 +8,23 @@ IS
   TO DO
   :ADD A NEW PROCEDURE TO LOAD SPECIAL PROJECTS INTO ICC
   :ADD A NEW PROCEDURE TO INSERT SPECIAL PROJECTS TO ASSIGNMENT_TEMPLATE
-  
-  Version # 3.5 
+
+  Version # 3.5
   :Update the Assignment Template insert with correct statement
+ 
+  Version # 3.7 
+  :update 
+            ICC_MANAGE_WORKLOAD
+            QAP_ICC_REVIEWS
+            ICC_REASSIGN_WORKLOAD
+            ICC_MERGE_TEMP_TO_BACKLOG
+
+   1. Make sure the APP USER Parm is set to upper case so Named report is used
+   2. Take time off Date uploaded and Date to Review in order for APEX reports work correctly
+   3. correct between function of report: use both parms not just one
+   4. Add completed = 0 to reassignment in order to keep from reassinging close orders
    
- ****************************************************************/
+****************************************************************/
 
 
 TYPE  GenRefCursor is REF CURSOR;
@@ -686,13 +699,10 @@ PROCEDURE ICC_CLEAR_BACKLOG;
 PROCEDURE NON_ACTIVE_TD_VENDORS;
 
 END;
+
 /
-
-show errors;
-
-
-Set define off;
-
+SHOW ERRORS;
+SET DEFINE OFF;
 CREATE OR REPLACE PACKAGE BODY SQA_LOVS
 IS
 
@@ -2237,7 +2247,7 @@ INSERT INTO  SQA_VENDOR_HISTORY ( VENDOR_ID, REVIEWED_BY, NBR_REVIEWED,      REV
                        VALUES ( P_VENDOR_ID, P_APP_USER,  P_NUMBER_TO_REVIEW,GV_CURRENT_DATE, 0, 0, 0,0) RETURNING HISTORY_ID INTO P_REVIEW_ID;
 
                        COMMIT;
-                       
+
 --LIMIT P_NUMBER_TO_REVIEW;
 
 
@@ -2257,10 +2267,10 @@ SQL_STMT := SQL_STMT||'           AND   COMPLETED_DT >= :C ) ';
 SQL_STMT := SQL_STMT||'  WHERE   RK  = :R ';
 
 
-WHILE ( SQLROWS < P_NUMBER_TO_REVIEW ) 
+WHILE ( SQLROWS < P_NUMBER_TO_REVIEW )
     LOOP
          GROUP_NO := GROUP_NO + 1;
-    
+
     OPEN GC FOR SQL_STMT USING  P_VENDOR_NAME, P_SEGMENTS, P_START_COUNTER_DATE, GROUP_NO;
         FETCH GC BULK COLLECT INTO TD.PID,
                                    TD.WORKING,
@@ -2269,44 +2279,44 @@ WHILE ( SQLROWS < P_NUMBER_TO_REVIEW )
                                    TD.BATCH_NO,
                                    TD.COMPLETED_DT,
                                    TD.rk;
-                        
-    CLOSE GC;
-     
-           
-           IF  (TD.PID.COUNT = 0) 
-               THEN 
-                   SQLROWS := P_NUMBER_TO_REVIEW;
-           END IF;     
 
-            FOR i IN 1..TD.PID.COUNT loop               
+    CLOSE GC;
+
+
+           IF  (TD.PID.COUNT = 0)
+               THEN
+                   SQLROWS := P_NUMBER_TO_REVIEW;
+           END IF;
+
+            FOR i IN 1..TD.PID.COUNT loop
                 EXIT WHEN SQLROWS >= P_NUMBER_TO_REVIEW;
 
 
-                 
-                IF (TD.COMPLETED_DT(i) > ( GV_CURRENT_DATE  - 60) ) 
-                    THEN 
+
+                IF (TD.COMPLETED_DT(i) > ( GV_CURRENT_DATE  - 60) )
+                    THEN
                        TD.WORKING(i)    := 'Y';
                        TD.SQA_TD_REP(i) := UPPER(P_APP_USER);
                        TD.REVIEW_ID(i)  := P_REVIEW_ID;
                        TD.BATCH_NO(i)   := P_BATCH_NO;
-                       SQLROWS          := SQLROWS + 1;                                        
+                       SQLROWS          := SQLROWS + 1;
                 END IF;
-                
-            END LOOP;                               
+
+            END LOOP;
 
 
         FOR i IN 1..TD.PID.COUNT loop
-           
-           IF  ( TD.BATCH_NO(i)  > 0 ) THEN 
+
+           IF  ( TD.BATCH_NO(i)  > 0 ) THEN
                 EXECUTE IMMEDIATE UPD_STMT USING  TD.WORKING(i), TD.SQA_TD_REP(i), TD.REVIEW_ID(i), TD.BATCH_NO(i), TD.PID(i);
            END IF;
-           
-        END LOOP;                               
+
+        END LOOP;
 
         COMMIT;
 
 END LOOP;
-        
+
 
 
           INSERT INTO BOA_PROCESS_LOG
@@ -5891,13 +5901,13 @@ SELECT  A.LOANNUMBER,
       WHEN R.RECONVEY is not null AND ps.ACTUAL_REVIEW_DATE IS NOT NULL AND fl.ACTUAL_REVIEW_DATE IS NOT NULL AND fl.ACTUAL_REVIEW_DATE >= ps.ACTUAL_REVIEW_DATE THEN  'Assign - RECONVEY'
       WHEN R.RECONVEY is not null AND ps.ACTUAL_REVIEW_DATE IS NULL AND fl.ACTUAL_REVIEW_DATE IS NOT NULL THEN  'Assign - RECONVEY'
       WHEN R.RECONVEY is not null AND ps.ACTUAL_REVIEW_DATE IS NULL AND fl.ACTUAL_REVIEW_DATE IS NULL THEN  'Assign - RECONVEY'
---IF(AND(RECONVEY CHECK<>"",TODAY()-59<=LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies"      
-      WHEN R.RECONVEY is not null AND TRUNC(SYSDATE) - 59 <= ps.ACTUAL_REVIEW_DATE  THEN  'NOT REVIEWED - Autocompleted Reverifies'     
---IF(AND(RECONVEY CHECK<>"",LAST PASS DATE>=LAST FAIL DATE,TODAY()-59<LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies" 
+--IF(AND(RECONVEY CHECK<>"",TODAY()-59<=LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies"
+      WHEN R.RECONVEY is not null AND TRUNC(SYSDATE) - 59 <= ps.ACTUAL_REVIEW_DATE  THEN  'NOT REVIEWED - Autocompleted Reverifies'
+--IF(AND(RECONVEY CHECK<>"",LAST PASS DATE>=LAST FAIL DATE,TODAY()-59<LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies"
       when R.RECONVEY IS NOT NULL AND ps.ACTUAL_REVIEW_DATE >= FL.ACTUAL_REVIEW_DATE AND TRUNC(SYSDATE) - 59 < ps.ACTUAL_REVIEW_DATE THEN 'NOT REVIEWED - Autocompleted Reverifies'
       WHEN data_source NOT in ('CARDS') THEN 'Assign - INTICC Exception'
       WHEN R.RECONVEY IS NOT NULL THEN 'Assign - RECONVEY'
---    IF(AND(LAST FAIL DATE="",LAST PASS DATE=""),"Assign - New ICC", IF(MAX(LAST PASS DATE,LAST FAIL DATE)=LAST FAIL DATE,"Assign - Failed Prior"      
+--    IF(AND(LAST FAIL DATE="",LAST PASS DATE=""),"Assign - New ICC", IF(MAX(LAST PASS DATE,LAST FAIL DATE)=LAST FAIL DATE,"Assign - Failed Prior"
       WHEN ps.ACTUAL_REVIEW_DATE IS NULL AND fl.ACTUAL_REVIEW_DATE IS NULL THEN 'Assign - New ICC'
       WHEN NVL(TO_NUMBER(to_char(fl.ACTUAL_REVIEW_DATE,'YYYYMMDD')),0) > NVL(TO_NUMBER(to_char(ps.ACTUAL_REVIEW_DATE,'YYYYMMDD')),0) THEN 'Assign - Failed Prior'
       WHEN (TRUNC(SYSDATE) -  ps.ACTUAL_REVIEW_DATE) > 59 THEN  'Assign - Not Reviewed in 60 Days'
@@ -5908,14 +5918,14 @@ SELECT R.LOANNUMBER,R.CLIENTCODE, R.DATA_SOURCE
  FROM ( SELECT LOANNUMBER,CLIENTCODE, DATA_SOURCE, RANK() OVER ( PARTITION BY LOANNUMBER,CLIENTCODE ORDER BY DATA_SOURCE DESC, ROWNUM) RK
  FROM(
  select  LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE, 'INTICC' AS DATA_SOURCE
- from inticc_daily_vw   
+ from inticc_daily_vw
  UNION
  select  LTRIM(LOANNUMBER,'0') AS LOANNUMBER,CLIENT_CODE AS CLIENTCODE, 'FIPINT' AS DATA_SOURCE
- from fipint_daily_vw  
+ from fipint_daily_vw
  UNION
 SELECT LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE,  'CARDS' AS DATA_SOURCE
- FROM cpropertyinconveycondtion_vw   
-  where   lastreportediccdate  between (TRUNC(SYSDATE) - 1) and TRUNC(SYSDATE) 
+ FROM cpropertyinconveycondtion_vw
+  where   lastreportediccdate  between (TRUNC(SYSDATE) - 1) and TRUNC(SYSDATE)
   ))R
  WHERE R.RK = 1) A
 ------ claims
@@ -5927,13 +5937,13 @@ SELECT LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE,  'CARDS' AS DATA_SOURCE
 ------- latest pass
  LEFT JOIN ( SELECT  R.LOAN_NBR,R.CLIENT_CODE,R.OUTCOME,R.TRUE_OUTCOME, R.ACTUAL_REVIEW_DATE
              FROM (
-             SELECT LOAN_NBR,CLIENT_CODE,OUTCOME,TRUE_OUTCOME, ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
+             SELECT LOAN_NBR,CLIENT_CODE, OUTCOME, TRUE_OUTCOME, TRUNC(ACTUAL_REVIEW_DATE) AS ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
                FROM SQA_ICC_PRIOR_LOAN_HISTORY  WHERE OUTCOME IN ('Pass') ) R
              WHERE R.RK = 1) Ps on ( ps.LOAN_NBR = A.LOANNUMBER AND ps.CLIENT_CODE = A.CLIENTCODE)
 ------ latest fail
  LEFT JOIN ( SELECT  R.LOAN_NBR,R.CLIENT_CODE,R.OUTCOME,R.TRUE_OUTCOME, R.ACTUAL_REVIEW_DATE
              FROM (
-             SELECT LOAN_NBR,CLIENT_CODE,OUTCOME,TRUE_OUTCOME, ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
+             SELECT LOAN_NBR,CLIENT_CODE,OUTCOME,TRUE_OUTCOME, TRUNC(ACTUAL_REVIEW_DATE) AS ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
                FROM SQA_ICC_PRIOR_LOAN_HISTORY  WHERE OUTCOME IN ('Fail') ) R
              WHERE R.RK = 1) fl on ( fl.LOAN_NBR = A.LOANNUMBER AND fl.CLIENT_CODE = A.CLIENTCODE)
  LEFT JOIN ( SELECT U.LOANNUMBER, U.CLIENTCODE, 'RECONVEY' AS RECONVEY
@@ -6186,8 +6196,8 @@ SQLROWCOUNT := 0;
             )
      VALUES ( 'SQA_LOVS', 'ICC_QC_ASSIGNMENT',SYSDATE, SQLROWCOUNT, 'Clear last run if needed');
      COMMIT;
-          
-insert into SQA_ICC_assignment_template (LOANNUMBER, CLIENTCODE, ORDERNUMBER, RECONVEYDATE, CONVEYSTATUS, SALEDATE, WORKCODEDESC, ORDERDATE, RECONVEY, DATA_SOURCE, BACKLOG, REPORT_DATE, LATEST_PASS_DATE, LATEST_FAIL_DATE, ASSIGNMENT)
+
+insert into SQA_ICC_ASSIGNMENT_TEMPLATE (LOANNUMBER, CLIENTCODE, ORDERNUMBER, RECONVEYDATE, CONVEYSTATUS, SALEDATE, WORKCODEDESC, ORDERDATE, RECONVEY, DATA_SOURCE, BACKLOG, REPORT_DATE, LATEST_PASS_DATE, LATEST_FAIL_DATE, ASSIGNMENT)
 SELECT  A.LOANNUMBER,
         A.CLIENTCODE,
         CL.ORDERNUMBER,
@@ -6207,15 +6217,15 @@ SELECT  A.LOANNUMBER,
       WHEN R.RECONVEY is not null AND ps.ACTUAL_REVIEW_DATE IS NOT NULL AND fl.ACTUAL_REVIEW_DATE IS NOT NULL AND fl.ACTUAL_REVIEW_DATE >= ps.ACTUAL_REVIEW_DATE THEN  'Assign - RECONVEY'
       WHEN R.RECONVEY is not null AND ps.ACTUAL_REVIEW_DATE IS NULL AND fl.ACTUAL_REVIEW_DATE IS NOT NULL THEN  'Assign - RECONVEY'
       WHEN R.RECONVEY is not null AND ps.ACTUAL_REVIEW_DATE IS NULL AND fl.ACTUAL_REVIEW_DATE IS NULL THEN  'Assign - RECONVEY'
---IF(AND(RECONVEY CHECK<>"",TODAY()-59<=LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies"      
-      WHEN R.RECONVEY is not null AND TRUNC(SYSDATE) - 59 <= ps.ACTUAL_REVIEW_DATE  THEN  'NOT REVIEWED - Autocompleted Reverifies'     
---IF(AND(RECONVEY CHECK<>"",LAST PASS DATE>=LAST FAIL DATE,TODAY()-59<LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies" 
+--IF(AND(RECONVEY CHECK<>"",TODAY()-59<=LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies"
+      WHEN R.RECONVEY is not null AND TRUNC(SYSDATE) - 59 <= ps.ACTUAL_REVIEW_DATE  THEN  'NOT REVIEWED - Autocompleted Reverifies'
+--IF(AND(RECONVEY CHECK<>"",LAST PASS DATE>=LAST FAIL DATE,TODAY()-59<LAST PASS DATE),"NOT REVIEWED - Autocompleted Reverifies"
       when R.RECONVEY IS NOT NULL AND ps.ACTUAL_REVIEW_DATE >= FL.ACTUAL_REVIEW_DATE AND TRUNC(SYSDATE) - 59 < ps.ACTUAL_REVIEW_DATE THEN 'NOT REVIEWED - Autocompleted Reverifies'
       WHEN data_source NOT in ('CARDS') THEN 'Assign - INTICC Exception'
       WHEN R.RECONVEY IS NOT NULL THEN 'Assign - RECONVEY'
---    IF(AND(LAST FAIL DATE="",LAST PASS DATE=""),"Assign - New ICC", IF(MAX(LAST PASS DATE,LAST FAIL DATE)=LAST FAIL DATE,"Assign - Failed Prior"      
+--    IF(AND(LAST FAIL DATE="",LAST PASS DATE=""),"Assign - New ICC", IF(MAX(LAST PASS DATE,LAST FAIL DATE)=LAST FAIL DATE,"Assign - Failed Prior"
       WHEN ps.ACTUAL_REVIEW_DATE IS NULL AND fl.ACTUAL_REVIEW_DATE IS NULL THEN 'Assign - New ICC'
-      when ps.ACTUAL_REVIEW_DATE = fl.ACTUAL_REVIEW_DATE THEN 'Assign - Failed Prior' 
+      when ps.ACTUAL_REVIEW_DATE = fl.ACTUAL_REVIEW_DATE THEN 'Assign - Failed Prior'
       WHEN NVL(TO_NUMBER(to_char(fl.ACTUAL_REVIEW_DATE,'YYYYMMDD')),0) > NVL(TO_NUMBER(to_char(ps.ACTUAL_REVIEW_DATE,'YYYYMMDD')),0) THEN 'Assign - Failed Prior'
       WHEN (TRUNC(SYSDATE) -  ps.ACTUAL_REVIEW_DATE) > 59 THEN  'Assign - Not Reviewed in 60 Days'
  ELSE  'NOT REVIEWED - Autocompleted Reverifies'
@@ -6225,14 +6235,14 @@ SELECT R.LOANNUMBER,R.CLIENTCODE, R.DATA_SOURCE
  FROM ( SELECT LOANNUMBER,CLIENTCODE, DATA_SOURCE, RANK() OVER ( PARTITION BY LOANNUMBER,CLIENTCODE ORDER BY DATA_SOURCE DESC, ROWNUM) RK
  FROM(
  select  LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE, 'INTICC' AS DATA_SOURCE
- from inticc_daily_vw   
+ from inticc_daily_vw
  UNION
  select  LTRIM(LOANNUMBER,'0') AS LOANNUMBER,CLIENT_CODE AS CLIENTCODE, 'FIPINT' AS DATA_SOURCE
- from fipint_daily_vw  
+ from fipint_daily_vw
  UNION
 SELECT LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE,  'CARDS' AS DATA_SOURCE
- FROM cpropertyinconveycondtion_vw   
-  where   lastreportediccdate  between (TRUNC(SYSDATE) - 1) and TRUNC(SYSDATE) 
+ FROM cpropertyinconveycondtion_vw
+  where   lastreportediccdate  between (TRUNC(SYSDATE) - 1) and TRUNC(SYSDATE)
   ))R
  WHERE R.RK = 1) A
 ------ claims
@@ -6244,14 +6254,14 @@ SELECT LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE,  'CARDS' AS DATA_SOURCE
 ------- latest pass
  LEFT JOIN ( SELECT  R.LOAN_NBR,R.CLIENT_CODE,R.OUTCOME,R.TRUE_OUTCOME, R.ACTUAL_REVIEW_DATE
              FROM (
-             SELECT LOAN_NBR,CLIENT_CODE,OUTCOME,TRUE_OUTCOME, ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
-               FROM SQA_ICC_PRIOR_LOAN_HISTORY where actual_review_date > ( trunc(sysdate) - 121)  and  OUTCOME IN ('Pass') ) R
+             SELECT LOAN_NBR,CLIENT_CODE,OUTCOME,TRUE_OUTCOME, TRUNC(ACTUAL_REVIEW_DATE) AS ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
+               FROM SQA_ICC_PRIOR_LOAN_HISTORY where TRUNC(actual_review_date) > ( trunc(sysdate) - 121)  and  OUTCOME IN ('Pass') ) R
              WHERE R.RK = 1) Ps on ( ps.LOAN_NBR = A.LOANNUMBER AND ps.CLIENT_CODE = A.CLIENTCODE)
 ------ latest fail
  LEFT JOIN ( SELECT  R.LOAN_NBR,R.CLIENT_CODE,R.OUTCOME,R.TRUE_OUTCOME, R.ACTUAL_REVIEW_DATE
              FROM (
-             SELECT LOAN_NBR,CLIENT_CODE,OUTCOME,TRUE_OUTCOME, ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
-               FROM SQA_ICC_PRIOR_LOAN_HISTORY  where actual_review_date > ( trunc(sysdate) - 121)  and OUTCOME IN ('Fail') ) R
+             SELECT LOAN_NBR,CLIENT_CODE,OUTCOME,TRUE_OUTCOME, TRUNC(ACTUAL_REVIEW_DATE) AS ACTUAL_REVIEW_DATE, RANK() OVER ( PARTITION BY LOAN_NBR, CLIENT_CODE ORDER BY ACTUAL_REVIEW_DATE DESC, ROWNUM) RK
+               FROM SQA_ICC_PRIOR_LOAN_HISTORY  where TRUNC(actual_review_date) > ( trunc(sysdate) - 121)  and OUTCOME IN ('Fail') ) R
              WHERE R.RK = 1) fl on ( fl.LOAN_NBR = A.LOANNUMBER AND fl.CLIENT_CODE = A.CLIENTCODE)
  LEFT JOIN ( SELECT U.LOANNUMBER, U.CLIENTCODE, 'RECONVEY' AS RECONVEY
              FROM (SELECT LTRIM(LOANNUMBER,'0') as LOANNUMBER,CLIENTCODE
@@ -6448,7 +6458,7 @@ SELECT LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE,  'CARDS' AS DATA_SOURCE
 
 
                 insert into SQA_ICC_PRIOR_LOAN_HISTORY ( PID,LOAN_NBR,CLIENT_CODE,REVIEWED_BY,OUTCOME,ICC_DECISION, CASIS_ALL_ICC, DATE_UPLOADED, DATE_TO_REVIEW,ACTUAL_REVIEW_DATE,DISPUTE,NBR_IMP,NBR_REVERSALS)
-                select  B.PID, b.loannumber,b.client, b.reviewer, a.assignment, 'N/A', 'N/A', B.DATE_UPLOADED, B.DATE_TO_REVIEW, B.DATE_TO_REVIEW, 'FALSE',0,0
+                select  B.PID, b.loannumber,b.client, b.reviewer, a.assignment, 'N/A', 'N/A', TRUNC(B.DATE_UPLOADED), TRUNC(B.DATE_TO_REVIEW), TRUNC(B.DATE_TO_REVIEW), 'FALSE',0,0
                 from SQA_ICC_assignment_template A
                 left join ( select   PID,
                                      LOANNUMBER,
@@ -6457,7 +6467,7 @@ SELECT LTRIM(LOANNUMBER,'0') AS LOANNUMBER, CLIENTCODE,  'CARDS' AS DATA_SOURCE
                                      CAR_PROCESSOR,
                                      DATE_UPLOADED,
                                      DATE_TO_REVIEW
-                              from sqa_icc_backlog
+                              from SQA_ICC_BACKLOG
                               WHERE COMPLETED = 0 ) B ON ( B.LOANNUMBER = A.LOANNUMBER AND B.CLIENT = A.CLIENTCODE )
                 where A.assignment like  'NOT REVIEWED%';
 
@@ -6541,7 +6551,7 @@ left join (SELECT L.REPORT_ID
                    from APEX_APPLICATION_PAGE_IR_COND
                   WHERE APPLICATION_ID  = P_APPL_ID
                    AND PAGE_ID          = P_PAGE_ID
-                   AND APPLICATION_USER = P_APP_USER
+                   AND UPPER(APPLICATION_USER)  = UPPER(P_APP_USER)
                    AND REPORT_NAME      = P_REPORT_NAME
                    ORDER BY LAST_UPDATED_ON DESC) L
                    WHERE ROWNUM = 1) B ON ( A.REPORT_ID = B.REPORT_ID)
@@ -6618,7 +6628,9 @@ END IF;
               FETCH C1 INTO R1;
               EXIT WHEN C1%NOTFOUND;
                CASE_STMT := CASE  WHEN UPPER(R1.CONDITION_OPERATOR) IN ('IN') THEN R1.CONDITION_COLUMN_NAME||' IN  ('''||REPLACE(R1.CONDITION_EXPRESSION,',',''',''')||''') '
+                                  WHEN UPPER(R1.CONDITION_OPERATOR) IN ('BETWEEN') THEN    REPLACE(REPLACE( REPLACE( REPLACE(R1.CONDITION_SQL,'"','') ,'#',''''),'APXWS_EXPR2',R1.CONDITION_EXPRESSION2),'APXWS_EXPR',R1.CONDITION_EXPRESSION)               
                                   ELSE REPLACE( REPLACE( REPLACE(R1.CONDITION_SQL,'"','') ,'#',''''),'APXWS_EXPR',R1.CONDITION_EXPRESSION)
+                                  
                              END;
 
                WHERE_STMT :=  WHERE_STMT||CASE_STMT||' AND ';
@@ -6630,6 +6642,12 @@ END IF;
        WHERE_STMT := RTRIM(WHERE_STMT,' AND ');
 
        SQL_STMT := ' SELECT LOANNUMBER, BACKLOG, CLIENTCODE,  ROWID  FROM  SQA_ICC_ASSIGNMENT_TEMPLATE '||WHERE_STMT;
+
+--INSERT INTO SHOW_STMT
+---VALUES (SQL_STMT);
+
+--COMMIT;
+
 
 --INSERT INTO SHOW_STMT
 --VALUES (NBR_TO_DEAL);
@@ -6907,7 +6925,7 @@ left join (SELECT L.REPORT_ID
                    from APEX_APPLICATION_PAGE_IR_COND
                   WHERE APPLICATION_ID  = P_APPL_ID
                    AND PAGE_ID          = P_PAGE_ID
-                   AND APPLICATION_USER = P_APP_USER
+                   AND UPPER(APPLICATION_USER) = UPPER(P_APP_USER)
                    AND REPORT_NAME      = P_REPORT_NAME
                    ORDER BY LAST_UPDATED_ON DESC) L
                    WHERE ROWNUM = 1) B ON ( A.REPORT_ID = B.REPORT_ID)
@@ -7000,9 +7018,20 @@ RECORDCNT_FROM := CASE WHEN UPPER(NVL(PLIMIT,'ALL')) = 'ALL' THEN 100000
                    ELSE TO_NUMBER(PLIMIT)
              END;
 
- WHERE_FROM_STMT := ' WHERE REVIEWER IN '||IN_FROM_STMT||' AND COMPLETED = 0';
+ WHERE_FROM_STMT := ' WHERE REVIEWER IN '||IN_FROM_STMT||' AND COMPLETED = 0 AND ';
 
 ---------- create additional filters
+
+--      insert into show_stmt
+--      values (PREPORT_NAME);
+--      COMMIT;
+/*
+        a.CONDITION_OPERATOR,
+        a.CONDITION_EXPR_TYPE,
+        a.CONDITION_EXPRESSION,
+        a.CONDITION_EXPRESSION2,
+        a.CONDITION_SQL,
+*/
 
 IF ( PREPORT_NAME IS NOT NULL )
    THEN
@@ -7013,10 +7042,12 @@ IF ( PREPORT_NAME IS NOT NULL )
               EXIT WHEN C1%NOTFOUND;
 
                CASE_STMT := CASE  WHEN UPPER(R1.CONDITION_OPERATOR) IN ('IN') THEN R1.CONDITION_COLUMN_NAME||' IN  ('''||REPLACE(R1.CONDITION_EXPRESSION,',',''',''')||''') '
+                                  when upper(R1.CONDITION_OPERATOR) IN ('BETWEEN') THEN    REPLACE(REPLACE( REPLACE( REPLACE(R1.CONDITION_SQL,'"','') ,'#',''''),'APXWS_EXPR2',R1.CONDITION_EXPRESSION2),'APXWS_EXPR',R1.CONDITION_EXPRESSION)
                                   ELSE REPLACE( REPLACE( REPLACE(R1.CONDITION_SQL,'"','') ,'#',''''),'APXWS_EXPR',R1.CONDITION_EXPRESSION)
                              END;
+                      WHERE_FROM_STMT :=  WHERE_FROM_STMT||CASE_STMT||' AND ';
+                 
 
-               WHERE_FROM_STMT :=  WHERE_FROM_STMT||CASE_STMT||' AND ';
 
          END LOOP;
 
@@ -7030,6 +7061,11 @@ END IF;
 ---------- pull the data to reassign
 
       SQL_STMT_FROM := ' SELECT LOANNUMBER, CLIENT, REVIEWER, CAR_PROCESSOR, DATE_UPLOADED, DATE_TO_REVIEW, PICK_ORDER, ROWID FROM SQA_ICC_BACKLOG '||WHERE_FROM_STMT;
+
+--      insert into show_stmt
+--      values (SQL_STMT_FROM);
+--      COMMIT;
+      
 
       OPEN GC FOR SQL_STMT_FROM;
           FETCH GC BULK COLLECT INTO FL.LOANNUMBER, FL.CLIENT, FL.REVIEWER, FL.CAR_PROCESSOR, FL.DATE_UPLOADED, FL.DATE_TO_REVIEW, FL.PICK_ORDER, FL.ROWIDS LIMIT RECORDCNT_FROM;
@@ -7116,10 +7152,10 @@ from APEX_APPLICATION_PAGE_IR_COND A
 left join (SELECT L.REPORT_ID
            FROM (select report_id, LAST_UPDATED_ON
                    from APEX_APPLICATION_PAGE_IR_COND
-                  WHERE APPLICATION_ID  = P_APPL_ID
-                   AND PAGE_ID          = P_PAGE_ID
-                   AND APPLICATION_USER = P_APP_USER
-                   AND REPORT_NAME      = P_REPORT_NAME
+                  WHERE APPLICATION_ID         = P_APPL_ID
+                   AND PAGE_ID                 = P_PAGE_ID
+                   AND UPPER(APPLICATION_USER) = UPPER(P_APP_USER)
+                   AND REPORT_NAME             = P_REPORT_NAME
                    ORDER BY LAST_UPDATED_ON DESC) L
                    WHERE ROWNUM = 1) B ON ( A.REPORT_ID = B.REPORT_ID)
 WHERE A.REPORT_ID = B.REPORT_ID;
@@ -7198,6 +7234,7 @@ END IF;
               FETCH C1 INTO R1;
               EXIT WHEN C1%NOTFOUND;
                CASE_STMT := CASE  WHEN UPPER(R1.CONDITION_OPERATOR) IN ('IN') THEN R1.CONDITION_COLUMN_NAME||' IN  ('''||REPLACE(R1.CONDITION_EXPRESSION,',',''',''')||''') '
+                                  when upper(R1.CONDITION_OPERATOR) IN ('BETWEEN') THEN    REPLACE(REPLACE( REPLACE( REPLACE(R1.CONDITION_SQL,'"','') ,'#',''''),'APXWS_EXPR2',R1.CONDITION_EXPRESSION2),'APXWS_EXPR',R1.CONDITION_EXPRESSION)
                                   ELSE REPLACE( REPLACE( REPLACE(R1.CONDITION_SQL,'"','') ,'#',''''),'APXWS_EXPR',R1.CONDITION_EXPRESSION)
                              END;
 
@@ -7228,10 +7265,8 @@ END IF;
         CLOSE GC;
 
         for y in 1..bt.loannumber.count loop
-              execute immediate ' UPDATE SQA_ICC_BACKLOG SET REVIEWER = :A, DATE_TO_REVIEW  = :B WHERE ROWID = :C ' USING bt.reviewer(y), SYSDATE, bt.rowids(y);
-
+              execute immediate ' UPDATE SQA_ICC_BACKLOG SET REVIEWER = :A, DATE_TO_REVIEW  = :B WHERE ROWID = :C ' USING bt.reviewer(y), TRUNC(SYSDATE), bt.rowids(y);
         end loop;
-
 
         commit;
 
@@ -7267,7 +7302,7 @@ TYPE SQA_ICC_ASSIGNMENT_TEMP IS RECORD
               BEGIN
 
                       INSERT INTO SQA_ICC_BACKLOG ( LOANNUMBER, CLIENT, REVIEWER, CAR_PROCESSOR, DATE_UPLOADED, DATE_TO_REVIEW, PICK_ORDER, COMPLETED)
-                       VALUES (bt.LOANNUMBER(x), bt.CLIENT(x), bt.REVIEWER(x), bt.CAR_PROCESSOR(x), SYSDATE , TRUNC(SYSDATE),  bt.PICK_ORDER(x), 0);
+                       VALUES (bt.LOANNUMBER(x), bt.CLIENT(x), bt.REVIEWER(x), bt.CAR_PROCESSOR(x), TRUNC(SYSDATE) , TRUNC(SYSDATE),  bt.PICK_ORDER(x), 0);
                        COMMIT;
               EXCEPTION
                      WHEN OTHERS THEN
@@ -7555,22 +7590,22 @@ DEL_STMT  := 'DELETE SQA_VENDOR_LIST WHERE VENDOR_ID = :A';
 SQL_STMT := ' SELECT  A.VENDOR_ID,  A.VENDOR_CODE, A.SEGMENTS ';
 SQL_STMT := SQL_STMT||' FROM SQA_VENDOR_LIST A ';
 SQL_STMT := SQL_STMT||' LEFT JOIN ( SELECT CONTRACTOR, REPORT_SEGMENT,  Latest_job';
-SQL_STMT := SQL_STMT||'             FROM ( SELECT Contractor, Report_Segment, max(COMPLETED_DT) latest_job from sqa_td_data  group by contractor, report_segment ) ';  
+SQL_STMT := SQL_STMT||'             FROM ( SELECT Contractor, Report_Segment, max(COMPLETED_DT) latest_job from sqa_td_data  group by contractor, report_segment ) ';
 SQL_STMT := SQL_STMT||'             WHERE LATEST_JOB < ( GV_CURRENT_DATE - 30 ) ';
-SQL_STMT := SQL_STMT||'           ) B ON ( A.VENDOR_CODE = B.CONTRACTOR AND A.SEGMENTS = B.REPORT_SEGMENT)';    
-SQL_STMT := SQL_STMT||'  WHERE  A.VENDOR_CODE = B.CONTRACTOR '; 
+SQL_STMT := SQL_STMT||'           ) B ON ( A.VENDOR_CODE = B.CONTRACTOR AND A.SEGMENTS = B.REPORT_SEGMENT)';
+SQL_STMT := SQL_STMT||'  WHERE  A.VENDOR_CODE = B.CONTRACTOR ';
 SQL_STMT := SQL_STMT||'    AND  A.SEGMENTS    = B.REPORT_SEGMENT ';
 
 OPEN GC FOR SQL_STMT;
      FETCH GC BULK COLLECT INTO QP.VENDOR_ID, QP.VENDOR_CODE, QP.SEGMENTS;
      CNT := QP.VENDOR_ID.COUNT;
-      
+
      FOR I in 1.. qp.vendor_id.count loop
-           
+
           EXECUTE IMMEDIATE DEL_STMT USING QP.VENDOR_ID(I);
-          
+
      end loop;
-       
+
 CLOSE GC;
              commit;
 
@@ -7599,6 +7634,4 @@ BEGIN
 END;
 
 /
-
-show errors;
-
+SHOW ERRORS;
